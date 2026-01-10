@@ -40,3 +40,37 @@
 .read-the-docs {
   color: #888;
 }
+
+/* --- Layout container (prevents full-width stretching) --- */
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.contentInner {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+/* --- Library header row --- */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Make wide buttons not explode in Library */
+.wide {
+  width: 100%;
+}

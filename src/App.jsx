@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { initTelegram, getUser, isTg, tgAlert, tgPopup } from "./tg";
+import { loadUserState, saveUserState } from "./store";
 
 
 const playlists = [
@@ -57,14 +58,188 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-export default function App() {
-    const [tgUser, setTgUser] = useState(null);
+const DEFAULT_USER_STATE = {
+  library: [],
+  playlists: {},
+};
 
+////////////////////////////////////////////////////////////////////
+// Приводим любые старые версии к новой структуре
+function normalizeUserState(raw) {
+  // если пусто/битое
+  if (!raw || typeof raw !== "object") return structuredClone(DEFAULT_USER_STATE);
+
+  const next = {
+    library: Array.isArray(raw.library) ? raw.library : [],
+    playlists: raw.playlists && typeof raw.playlists === "object" ? raw.playlists : {},
+  };
+
+  // ---- МИГРАЦИЯ старого формата (если у тебя было tracks / плейлисты хранили tracks:[]) ----
+  // 1) если раньше было raw.tracks как объект { [trackId]: trackObj }
+  //    перенесём в library (уникально)
+  if (raw.tracks && typeof raw.tracks === "object") {
+    const fromTracksObj = Object.values(raw.tracks).filter(Boolean);
+    next.library = mergeUniqueTracks(next.library, fromTracksObj);
+  }
+
+  // 2) если в плейлистах раньше было поле tracks: [trackId] или [trackObj]
+  for (const pl of Object.values(next.playlists)) {
+    if (!pl || typeof pl !== "object") continue;
+
+    // гарантируем базовые поля
+    if (!pl.id) pl.id = crypto.randomUUID?.() ?? `pl_${Date.now()}`;
+    if (!pl.title) pl.title = "Untitled";
+    if (typeof pl.isPublic !== "boolean") pl.isPublic = false;
+
+    // trackIds — новый стандарт
+    if (!Array.isArray(pl.trackIds)) pl.trackIds = [];
+
+    // если было старое поле tracks
+    if (Array.isArray(pl.tracks)) {
+      // tracks мог быть массивом id или объектов
+      const ids = [];
+      const objs = [];
+
+      for (const t of pl.tracks) {
+        if (!t) continue;
+        if (typeof t === "string") ids.push(t);
+        else if (typeof t === "object" && t.id) {
+          ids.push(t.id);
+          objs.push(t);
+        }
+      }
+
+      // добавим объекты в library
+      next.library = mergeUniqueTracks(next.library, objs);
+
+      // добавим ids в trackIds
+      pl.trackIds = uniqueStrings([...pl.trackIds, ...ids]);
+
+      // удалим старое поле, чтобы больше не путаться
+      delete pl.tracks;
+    }
+  }
+
+  return next;
+}
+
+function uniqueStrings(arr) {
+  return Array.from(new Set(arr.filter((x) => typeof x === "string" && x.trim())));
+}
+
+function mergeUniqueTracks(existing, incoming) {
+  const map = new Map();
+  for (const t of existing) if (t?.id) map.set(String(t.id), t);
+  for (const t of incoming) if (t?.id) map.set(String(t.id), t);
+  return Array.from(map.values());
+}
+////////////////////////////////////////////////////////////////////
+
+
+export default function App() {
+const [tgUser, setTgUser] = useState(null);
+const userId = tgUser?.id ? String(tgUser.id) : "guest";
+
+//const [userState, setUserState] = useState({
+ // playlists: {},
+ // tracks: {},
+ // library: [], // порядок треков в My library
+//});
+
+const [userState, setUserState] = useState(DEFAULT_USER_STATE);
+
+const [isCreateOpen, setIsCreateOpen] = useState(false);
+const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+
+//const userPlaylists = Object.values(userState.playlists);
+const userPlaylists = userState ? Object.values(userState.playlists) : [];
+
+const libraryCount = userState.library.length;
+
+
+  useEffect(() => {
+    if (!tgUser?.id) return;
+//2
+    const saved = loadUserState(tgUser.id);
+    if (saved) {
+      setUserState(saved);
+    } else {
+      // первичная инициализация
+      const initial = {
+        playlists: {},
+        tracks: {},
+      };
+      setUserState(initial);
+      saveUserState(tgUser.id, initial);
+    }
+  }, [tgUser]);
+//
+  useEffect(() => {
+    if (!tgUser?.id || !userState) return;
+    saveUserState(tgUser.id, userState);
+  }, [userState, tgUser]);
+//
+  useEffect(() => {
+  const saved = localStorage.getItem(`mini-music:${userId}`);
+  if (!saved) return;
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    setUserState({
+      playlists: parsed.playlists ?? {},
+      tracks: parsed.tracks ?? {},
+      library: parsed.library ?? [],
+    });
+  } catch (e) {
+    console.error("Failed to parse local state", e);
+  }
+}, [userId]);
+
+
+useEffect(() => {
+  try {
+    const saved = localStorage.getItem(`mini-music:${userId}`);
+    const parsed = saved ? JSON.parse(saved) : null;
+    const normalized = normalizeUserState(parsed);
+    setUserState(normalized);
+
+    // важно: сразу же сохраняем нормализованную версию обратно,
+    // чтобы дальше всегда работало в новом формате
+    localStorage.setItem(`mini-music:${userId}`, JSON.stringify(normalized));
+  } catch (e) {
+    console.error("Failed to load userState:", e);
+    setUserState(structuredClone(DEFAULT_USER_STATE));
+  }
+}, [userId]);
+
+useEffect(() => {
+  try {
+    localStorage.setItem(`mini-music:${userId}`, JSON.stringify(userState));
+  } catch (e) {
+    console.error("Failed to save userState:", e);
+  }
+}, [userState, userId]);
+
+
+
+
+//useEffect(() => {
+  //if (!userState) return;
+
+ // localStorage.setItem(
+   // `mini-music:${userId}`,
+  //  JSON.stringify(userState)
+  //);
+//}, [userState, userId]);
+
+
+//
   useEffect(() => {
     initTelegram();
     setTgUser(getUser());
   }, []);
-
+//
   // page: {name:'list'} | {name:'playlist', playlistId:'p1'}
   const [page, setPage] = useState({ name: "list" });
 
@@ -155,6 +330,81 @@ export default function App() {
     setCurrentIndex(index);
   }
 
+  function createPlaylistWithTitle() 
+  {
+    const title = newPlaylistTitle.trim();
+
+    if (!title) {
+      tgAlert?.("Введите название плейлиста"); // если в Telegram
+      return;
+    }
+
+    if (title.length > 40) {
+      tgAlert?.("Слишком длинное название (до 40 символов)");
+      return;
+    }
+
+    const id = `u-${Date.now()}`;
+
+    setUserState((prev) => ({
+      ...prev,
+      playlists: {
+        ...prev.playlists,
+        [id]: {
+          id,
+          title,
+          isPublic: false,
+          tracks: [],
+        },
+      },
+    }));
+
+    setIsCreateOpen(false);
+  }
+
+
+function createPlaylist(title) {
+  const id = crypto.randomUUID?.() ?? `pl_${Date.now()}`;
+
+  setUserState((prev) => ({
+    ...prev,
+    playlists: {
+      ...prev.playlists,
+      [id]: {
+        id,
+        title: title.trim(),
+        isPublic: false,
+        trackIds: [],
+      },
+    },
+  }));
+}
+
+
+function addDemoTrackToLibrary() {
+  const id = `trk_${Date.now()}`;
+
+  const demo = {
+    id,
+    title: `Demo Track ${new Date().toLocaleTimeString()}`,
+    artist: "Mini Music",
+    durationSec: 0,
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  };
+
+  setUserState((prev) => {
+    const base = prev ?? { playlists: {}, tracks: {} };
+    return {
+      ...base,
+      tracks: {
+        ...base.tracks,
+        [id]: demo,
+      },
+    };
+  });
+}
+
+
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio) return;
@@ -187,46 +437,96 @@ export default function App() {
   return (
     <div className="page">
       <Header
-        title={page.name === "list" ? "Плейлисты" : selectedPlaylist?.title ?? "Плейлист"}
-        onBack={page.name === "playlist" ? () => setPage({ name: "list" }) : null}
-      />
+  title={
+    page.name === "list"
+      ? "Playlists"
+      : page.name === "library"
+      ? "My library"
+      : selectedPlaylist?.title ?? "Playlist"
+  }
+  onBack={
+    page.name === "playlist" || page.name === "library"
+      ? () => setPage({ name: "list" })
+      : null
+  }
+/>
 
       <div className="content content--withPlayer">
+          <div className="contentInner">
         {page.name === "list" && (
           <>
-          {tgUser && (
-  <div className="muted" style={{ marginBottom: 10 }}>
-    Telegram: id={tgUser.id} @{tgUser.username ?? "no_username"} {isTg() ? "(TWA)" : "(browser)"}
-  </div>
-)}
-{!tgUser && (
-  <div className="muted" style={{ marginBottom: 10 }}>
-    Telegram user: нет (скорее всего открыт в браузере)
-  </div>
-)}
+        {tgUser && (
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Telegram: id={tgUser.id} @{tgUser.username ?? "no_username"} {isTg() ? "(TWA)" : "(browser)"}
+          </div>
+        )}
+        {!tgUser && (
+          <div className="muted" style={{ marginBottom: 10 }}>
+            Telegram user: нет (скорее всего открыт в браузере)
+          </div>
+        )}
             <h1 className="h1">Мои плейлисты</h1>
 
             <div className="grid">
-              {playlists.map((p) => (
-                <button
-                  key={p.id}
-                  className="card"
-                  onClick={() => setPage({ name: "playlist", playlistId: p.id })}
-                >
-                  <div className="card__title">{p.title}</div>
-                  <div className="card__meta">
-                    <span className={"badge " + (p.isPublic ? "badge--public" : "badge--private")}>
-                      {p.isPublic ? "Публичный" : "Приватный"}
-                    </span>
-                    <span className="muted">{(tracksByPlaylistId[p.id] ?? []).length} треков</span>
-                  </div>
-                </button>
-              ))}
-            </div>
 
-            <button className="primary" onClick={() => tgAlert("Создание плейлиста позже")}>
-              + Создать плейлист
+            {/* 0. БИБЛИОТЕКА */}
+            <button
+              className="card"
+              onClick={() => setPage({ name: "library" })}
+
+            >
+              <div className="card__title">My library</div>
+              <div className="card__meta">
+                <span className="badge badge--private">Системный</span>
+                <span className="muted">
+                  {userState ? Object.keys(userState.tracks ?? {}).length : 0} songs
+                </span>
+              </div>
             </button>
+
+            {/* 1. СИСТЕМНЫЕ (демо) */}
+            {playlists.map((p) => (
+              <button
+                key={p.id}
+                className="card"
+                onClick={() => setPage({ name: "playlist", playlistId: p.id })}
+              >
+                <div className="card__title">{p.title}</div>
+                <div className="card__meta">
+                  <span className={"badge " + (p.isPublic ? "badge--public" : "badge--private")}>
+                    {p.isPublic ? "Публичный" : "Приватный"}
+                  </span>
+                  <span className="muted">
+                    {(tracksByPlaylistId[p.id] ?? []).length} треков
+                  </span>
+                </div>
+              </button>
+            ))}
+
+            {/* 2. ПОЛЬЗОВАТЕЛЬСКИЕ */}
+            {userPlaylists.map((p) => (
+              <button key={p.id} className="card">
+                <div className="card__title">{p.title}</div>
+                <div className="card__meta">
+                  <span className="badge badge--private">Мой</span>
+                  <span className="muted">{(p.trackIds?.length ?? 0)} songs</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+
+          <button
+            className="primary"
+            onClick={() => {
+              setNewPlaylistTitle("");
+              setIsCreateOpen(true);
+            }}
+          >
+            + Создать плейлист
+          </button>
+
+
           </>
         )}
 
@@ -238,14 +538,45 @@ export default function App() {
               </div>
 
               <div className="playlistActions">
-                <button className="secondary" onClick={() => tgAlert("Поделиться позже")}>
-                  Поделиться
-                </button>
-                <button className="secondary" onClick={() => tgAlert("Сохранить к себе позже")}>
-                  Сохранить к себе
-                </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (!tgUser || !userState) return;
+
+                  setUserState((prev) => {
+                    const next = structuredClone(prev);
+
+                    const srcPlaylist = selectedPlaylist;
+                    if (!srcPlaylist) return prev;
+
+                    const newPlaylistId = `copy-${srcPlaylist.id}`;
+
+                    if (next.playlists[newPlaylistId]) {
+                      return prev; // уже сохранён
+                    }
+
+                    next.playlists[newPlaylistId] = {
+                      id: newPlaylistId,
+                      title: srcPlaylist.title,
+                      isPublic: false,
+                      tracks: tracks.map((t) => t.id),
+                    };
+
+                    tracks.forEach((t) => {
+                      next.tracks[t.id] = t;
+                    });
+
+                    return next;
+                  });
+                }}
+              >
+                Сохранить к себе
+              </button>
+
               </div>
             </div>
+
+
 
             <div className="tracksBox">
               {tracks.map((t, idx) => (
@@ -279,6 +610,60 @@ export default function App() {
         )}
       </div>
 
+            {page.name === "library" && (
+      <>
+        <div className="playlistTop">
+          <div className="muted">
+            System · {userState ? Object.keys(userState.tracks ?? {}).length : 0} songs
+          </div>
+
+          <div className="playlistActions">
+            <button className="secondary" onClick={() => tgAlert("Upload/Forward later")}>
+              How to add music
+            </button>
+          </div>
+        </div>
+
+        <div className="tracksBox">
+          {userState && Object.keys(userState.tracks ?? {}).length > 0 ? (
+            Object.values(userState.tracks).map((t, idx) => (
+              <button
+                className="trackRow trackRow--btn"
+                key={t.id}
+                onClick={() => {
+                  // play a single track: set queue to [t]
+                  setQueue([t]);
+                  setCurrentIndex(0);
+                }}
+                title="Tap to play"
+              >
+                <div className="trackIdx">{idx + 1}</div>
+
+                <div className="trackMain">
+                  <div className="trackTitle">{t.title}</div>
+                  <div className="trackArtist">{t.artist ?? "Unknown artist"}</div>
+                </div>
+
+                <div className="trackDur">{t.durationSec ? fmt(t.durationSec) : "—:—"}</div>
+                <div className="trackMenuIcon">▶</div>
+              </button>
+            ))
+          ) : (
+            <div className="muted" style={{ padding: 14 }}>
+              Your library is empty. Send audio to the bot or upload from your device.
+            </div>
+          )}
+        </div>
+
+        <div className="bottom">
+          <button className="primary wide" onClick={addDemoTrackToLibrary}>
+            + Add demo track
+          </button>
+        </div>
+      </>
+    )}
+
+
       {/* Скрытый audio */}
       <audio ref={audioRef} />
 
@@ -295,21 +680,117 @@ export default function App() {
         onOpenFull={() => setIsFullPlayerOpen(true)}
       />
 
-      {isFullPlayerOpen && currentTrack && (
-        <FullPlayer
-          track={currentTrack}
-          isPlaying={isPlaying}
-          curTime={curTime}
-          duration={duration}
-          onTogglePlay={togglePlay}
-          onPrev={prev}
-          onNext={next}
-          onSeek={seekTo}
-          onClose={() => setIsFullPlayerOpen(false)}
+{isCreateOpen && (
+  <div
+    onClick={() => {
+      console.log("OVERLAY CLICK");
+      setIsCreateOpen(false);
+    }}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.6)",
+      zIndex: 999999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 16,
+    }}
+  >
+    <div
+      onClick={(e) => {
+        console.log("MODAL CLICK");
+        e.stopPropagation();
+      }}
+      style={{
+        width: "min(520px, 100%)",
+        background: "#111",
+        color: "#fff",
+        borderRadius: 16,
+        padding: 16,
+        border: "1px solid rgba(255,255,255,0.12)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 18, fontWeight: 700 }}>Новый плейлист</div>
+
+        {/* ЯВНАЯ КНОПКА ЗАКРЫТЬ */}
+        <button
+          onClick={() => {
+            console.log("CLOSE BTN");
+            setIsCreateOpen(false);
+          }}
+          style={{
+            padding: "8px 10px",
+            borderRadius: 10,
+            background: "rgba(255,255,255,0.12)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.12)",
+            cursor: "pointer",
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <input
+          value={newPlaylistTitle}
+          onChange={(e) => setNewPlaylistTitle(e.target.value)}
+          placeholder="Название плейлиста"
+          autoFocus
+          style={{
+            width: "100%",
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.15)",
+            background: "rgba(0,0,0,0.35)",
+            color: "#fff",
+            outline: "none",
+            fontSize: 16,
+          }}
         />
-      )}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <button
+          onClick={() => setIsCreateOpen(false)}
+          style={{
+            flex: 1,
+            padding: 12,
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.08)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.12)",
+            cursor: "pointer",
+          }}
+        >
+          Отмена
+        </button>
+
+        <button
+          onClick={createPlaylist}
+          disabled={!newPlaylistTitle.trim()}
+          style={{
+            flex: 1,
+            padding: 12,
+            borderRadius: 12,
+            background: newPlaylistTitle.trim() ? "rgba(120,180,255,0.25)" : "rgba(255,255,255,0.06)",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.12)",
+            cursor: newPlaylistTitle.trim() ? "pointer" : "not-allowed",
+          }}
+        >
+          Создать
+        </button>
+      </div>
     </div>
-  );
+  </div>
+)}
+
+  </div>
+  </div>
+);
 }
 
 function Header({ title, onBack }) {
@@ -421,6 +902,7 @@ function FullPlayer({ track, isPlaying, curTime, duration, onTogglePlay, onPrev,
         </div>
       </div>
     </div>
+    
   );
+  
 }
-
