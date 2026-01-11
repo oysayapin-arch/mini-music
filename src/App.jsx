@@ -135,31 +135,35 @@ function mergeUniqueTracks(existing, incoming) {
 }
 ////////////////////////////////////////////////////////////////////
 
-
+//========================================================================================================function App================================//
 export default function App() {
-const [tgUser, setTgUser] = useState(null);
-const userId = tgUser?.id ? String(tgUser.id) : "guest";
+  const [tgUser, setTgUser] = useState(null);
+  const userId = tgUser?.id ? String(tgUser.id) : "guest";
+  //const [userState, setUserState] = useState({
+  // playlists: {},
+  // tracks: {},
+  // library: [], // порядок треков в My library
+  //});
+  const [userState, setUserState] = useState(DEFAULT_USER_STATE);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+  //const userPlaylists = Object.values(userState.playlists);
+  const userPlaylists = userState ? Object.values(userState.playlists) : [];
+  const libraryCount = userState.library.length;
+  //вычисление libraryTracks
+  const libraryTracks = useMemo(() => {
+    if (!userState?.tracks) return [];
+    return Object.values(userState.tracks);
+  }, [userState]);
+  const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
+  const [selectedTrackIds, setSelectedTrackIds] = useState(new Set());
+  const [targetPlaylistId, setTargetPlaylistId] = useState("");
 
-//const [userState, setUserState] = useState({
- // playlists: {},
- // tracks: {},
- // library: [], // порядок треков в My library
-//});
 
-const [userState, setUserState] = useState(DEFAULT_USER_STATE);
-
-const [isCreateOpen, setIsCreateOpen] = useState(false);
-const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
-
-//const userPlaylists = Object.values(userState.playlists);
-const userPlaylists = userState ? Object.values(userState.playlists) : [];
-
-const libraryCount = userState.library.length;
-
-
+  //========================================================================================================useEffect================================//
   useEffect(() => {
     if (!tgUser?.id) return;
-//2
+  //2
     const saved = loadUserState(tgUser.id);
     if (saved) {
       setUserState(saved);
@@ -173,93 +177,93 @@ const libraryCount = userState.library.length;
       saveUserState(tgUser.id, initial);
     }
   }, [tgUser]);
-//
+
   useEffect(() => {
     if (!tgUser?.id || !userState) return;
     saveUserState(tgUser.id, userState);
   }, [userState, tgUser]);
-//
+
   useEffect(() => {
-  const saved = localStorage.getItem(`mini-music:${userId}`);
-  if (!saved) return;
-
-  try {
-    const parsed = JSON.parse(saved);
-
-    setUserState({
-      playlists: parsed.playlists ?? {},
-      tracks: parsed.tracks ?? {},
-      library: parsed.library ?? [],
-    });
-  } catch (e) {
-    console.error("Failed to parse local state", e);
-  }
-}, [userId]);
-
-
-useEffect(() => {
-  try {
     const saved = localStorage.getItem(`mini-music:${userId}`);
-    const parsed = saved ? JSON.parse(saved) : null;
-    const normalized = normalizeUserState(parsed);
-    setUserState(normalized);
+    if (!saved) return;
 
-    // важно: сразу же сохраняем нормализованную версию обратно,
-    // чтобы дальше всегда работало в новом формате
-    localStorage.setItem(`mini-music:${userId}`, JSON.stringify(normalized));
-  } catch (e) {
-    console.error("Failed to load userState:", e);
-    setUserState(structuredClone(DEFAULT_USER_STATE));
-  }
-}, [userId]);
+    try {
+      const parsed = JSON.parse(saved);
 
-useEffect(() => {
-  try {
-    localStorage.setItem(`mini-music:${userId}`, JSON.stringify(userState));
-  } catch (e) {
-    console.error("Failed to save userState:", e);
-  }
-}, [userState, userId]);
+      setUserState({
+        playlists: parsed.playlists ?? {},
+        tracks: parsed.tracks ?? {},
+        library: parsed.library ?? [],
+      });
+    } catch (e) {
+      console.error("Failed to parse local state", e);
+    }
+  }, [userId]);
 
+  //========================================================================================================useEffect================================//
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`mini-music:${userId}`);
+      const parsed = saved ? JSON.parse(saved) : null;
+      const normalized = normalizeUserState(parsed);
+      setUserState(normalized);
 
+      // важно: сразу же сохраняем нормализованную версию обратно,
+      // чтобы дальше всегда работало в новом формате
+      localStorage.setItem(`mini-music:${userId}`, JSON.stringify(normalized));
+    } catch (e) {
+      console.error("Failed to load userState:", e);
+      setUserState(structuredClone(DEFAULT_USER_STATE));
+    }
+  }, [userId]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(`mini-music:${userId}`, JSON.stringify(userState));
+    } catch (e) {
+      console.error("Failed to save userState:", e);
+    }
+  }, [userState, userId]);
 
-//useEffect(() => {
-  //if (!userState) return;
+    //useEffect(() => {
+      //if (!userState) return;
 
- // localStorage.setItem(
-   // `mini-music:${userId}`,
-  //  JSON.stringify(userState)
-  //);
-//}, [userState, userId]);
+    // localStorage.setItem(
+      // `mini-music:${userId}`,
+      //  JSON.stringify(userState)
+      //);
+    //}, [userState, userId]);
 
-
-//
   useEffect(() => {
     initTelegram();
     setTgUser(getUser());
   }, []);
-//
+
   // page: {name:'list'} | {name:'playlist', playlistId:'p1'}
   const [page, setPage] = useState({ name: "list" });
-
   const selectedPlaylist = useMemo(() => {
     if (page.name !== "playlist") return null;
     return playlists.find((p) => p.id === page.playlistId) ?? null;
   }, [page]);
-
+  const selectedUserPlaylist =
+  page.name === "userPlaylist" && userState?.playlists?.[page.playlistId]
+    ? userState.playlists[page.playlistId]
+    : null;
+  const userPlaylistTracks = useMemo(() => {
+    if (!selectedUserPlaylist || !userState) return [];
+    return (selectedUserPlaylist.trackIds || [])
+      .map((id) => userState.tracks?.[id])
+      .filter(Boolean);
+  }, [selectedUserPlaylist, userState]);
   const tracks = useMemo(() => {
     if (!selectedPlaylist) return [];
     return tracksByPlaylistId[selectedPlaylist.id] ?? [];
   }, [selectedPlaylist]);
-
   // ===== Player state =====
   const audioRef = useRef(null);
-
   const [queue, setQueue] = useState([]); // текущая очередь треков
   const [currentIndex, setCurrentIndex] = useState(-1);
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
-
   const [isPlaying, setIsPlaying] = useState(false);
   const [curTime, setCurTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -362,55 +366,52 @@ useEffect(() => {
     setIsCreateOpen(false);
   }
 
-
-function createPlaylist(title) {
-  const id = crypto.randomUUID?.() ?? `pl_${Date.now()}`;
-
-  setUserState((prev) => ({
-    ...prev,
-    playlists: {
-      ...prev.playlists,
-      [id]: {
+  function createPlaylist() {
+    const title = String(newPlaylistTitle ?? "").trim();
+    if (!title) {
+      tgAlert("Enter playlist name");
+      return;
+    }
+    setUserState((prev) => {
+      const next = structuredClone(prev);
+      const id = crypto.randomUUID();
+      next.playlists[id] = {
         id,
-        title: title.trim(),
+        title,          // ✅ ВСЕГДА строка
+        trackIds: [],   // библиотека пустая
         isPublic: false,
-        trackIds: [],
-      },
-    },
-  }));
-}
+      };
+      return next;
+    });
+    setIsCreateOpen(false);
+    setNewPlaylistTitle("");
+  }
 
-
-function addDemoTrackToLibrary() {
-  const id = `trk_${Date.now()}`;
-
-  const demo = {
-    id,
-    title: `Demo Track ${new Date().toLocaleTimeString()}`,
-    artist: "Mini Music",
-    durationSec: 0,
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-  };
-
-  setUserState((prev) => {
-    const base = prev ?? { playlists: {}, tracks: {} };
-    return {
-      ...base,
-      tracks: {
-        ...base.tracks,
-        [id]: demo,
-      },
+  function addDemoTrackToLibrary() {
+    const id = `trk_${Date.now()}`;
+    const demo = {
+      id,
+      title: `Demo Track ${new Date().toLocaleTimeString()}`,
+      artist: "Mini Music",
+      durationSec: 0,
+      url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
     };
-  });
-}
-
+    setUserState((prev) => {
+      const base = prev ?? { playlists: {}, tracks: {} };
+      return {
+        ...base,
+        tracks: {
+          ...base.tracks,
+          [id]: demo,
+        },
+      };
+    });
+  }
 
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio) return;
-
     if (!currentTrack) return;
-
     if (audio.paused) {
       audio.play().catch(() => {});
     } else {
@@ -434,22 +435,34 @@ function addDemoTrackToLibrary() {
     setCurTime(t);
   }
 
+    function toggleSelectedTrack(id) {
+    setSelectedTrackIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
     <div className="page">
-      <Header
-  title={
-    page.name === "list"
-      ? "Playlists"
-      : page.name === "library"
-      ? "My library"
-      : selectedPlaylist?.title ?? "Playlist"
-  }
-  onBack={
-    page.name === "playlist" || page.name === "library"
-      ? () => setPage({ name: "list" })
-      : null
-  }
-/>
+   <
+      Header
+      title={
+      page.name === "list"
+        ? "Playlists"
+        : page.name === "library"
+        ? "My library"
+        : page.name === "userPlaylist"
+        ? (selectedUserPlaylist?.title ?? "My playlist")
+        : (selectedPlaylist?.title ?? "Playlist")
+        } 
+      onBack={
+      page.name === "playlist" || page.name === "library" || page.name === "userPlaylist"
+        ? () => setPage({ name: "list" })
+        : null
+      }
+      />
 
       <div className="content content--withPlayer">
           <div className="contentInner">
@@ -504,29 +517,30 @@ function addDemoTrackToLibrary() {
             ))}
 
             {/* 2. ПОЛЬЗОВАТЕЛЬСКИЕ */}
-            {userPlaylists.map((p) => (
-              <button key={p.id} className="card">
+                {userPlaylists.map((p) => (
+                <button
+                  key={p.id}
+                  className="card"
+                  onClick={() => setPage({ name: "userPlaylist", playlistId: p.id })}
+                >
                 <div className="card__title">{p.title}</div>
                 <div className="card__meta">
-                  <span className="badge badge--private">Мой</span>
-                  <span className="muted">{(p.trackIds?.length ?? 0)} songs</span>
+                  <span className="badge badge--private">My</span>
+                  <span className="muted">{p.trackIds.length} songs</span>
                 </div>
               </button>
             ))}
+
           </div>
-
-
-          <button
-            className="primary"
-            onClick={() => {
-              setNewPlaylistTitle("");
-              setIsCreateOpen(true);
-            }}
-          >
-            + Создать плейлист
-          </button>
-
-
+            <button
+              className="primary"
+              onClick={() => {
+                setNewPlaylistTitle("");
+                setIsCreateOpen(true);
+              }}
+            >
+              + Создать плейлист
+            </button>
           </>
         )}
 
@@ -538,45 +552,34 @@ function addDemoTrackToLibrary() {
               </div>
 
               <div className="playlistActions">
-              <button
-                className="secondary"
-                onClick={() => {
-                  if (!tgUser || !userState) return;
-
-                  setUserState((prev) => {
-                    const next = structuredClone(prev);
-
-                    const srcPlaylist = selectedPlaylist;
-                    if (!srcPlaylist) return prev;
-
-                    const newPlaylistId = `copy-${srcPlaylist.id}`;
-
-                    if (next.playlists[newPlaylistId]) {
-                      return prev; // уже сохранён
-                    }
-
-                    next.playlists[newPlaylistId] = {
-                      id: newPlaylistId,
-                      title: srcPlaylist.title,
-                      isPublic: false,
-                      tracks: tracks.map((t) => t.id),
-                    };
-
-                    tracks.forEach((t) => {
-                      next.tracks[t.id] = t;
+                <button lassName="secondary"
+                  onClick={() => {
+                    if (!tgUser || !userState) return;
+                    setUserState((prev) => {
+                      const next = structuredClone(prev);
+                      const srcPlaylist = selectedPlaylist;
+                      if (!srcPlaylist) return prev;
+                      const newPlaylistId = `copy-${srcPlaylist.id}`;
+                      if (next.playlists[newPlaylistId]) {
+                        return prev; // уже сохранён
+                      }
+                      next.playlists[newPlaylistId] = {
+                        id: newPlaylistId,
+                        title: srcPlaylist.title,
+                        isPublic: false,
+                        tracks: tracks.map((t) => t.id),
+                      };
+                      tracks.forEach((t) => {
+                        next.tracks[t.id] = t;
+                      });
+                      return next;
                     });
-
-                    return next;
-                  });
-                }}
-              >
-                Сохранить к себе
-              </button>
-
+                  }}
+                >
+                  Сохранить к себе
+                </button>
               </div>
             </div>
-
-
 
             <div className="tracksBox">
               {tracks.map((t, idx) => (
@@ -610,127 +613,170 @@ function addDemoTrackToLibrary() {
         )}
       </div>
 
-            {page.name === "library" && (
-      <>
-        <div className="playlistTop">
-          <div className="muted">
-            System · {userState ? Object.keys(userState.tracks ?? {}).length : 0} songs
+      {page.name === "userPlaylist" && selectedUserPlaylist && (
+        <>
+          <div className="playlistTop">
+            <div className="muted">My playlist · {userPlaylistTracks.length} songs</div>
           </div>
 
-          <div className="playlistActions">
-            <button className="secondary" onClick={() => tgAlert("Upload/Forward later")}>
-              How to add music
-            </button>
-          </div>
-        </div>
-
-        <div className="tracksBox">
-          {userState && Object.keys(userState.tracks ?? {}).length > 0 ? (
-            Object.values(userState.tracks).map((t, idx) => (
+          <div className="tracksBox">
+            {userPlaylistTracks.map((t, idx) => (
               <button
                 className="trackRow trackRow--btn"
                 key={t.id}
                 onClick={() => {
-                  // play a single track: set queue to [t]
-                  setQueue([t]);
-                  setCurrentIndex(0);
+                  setQueue(userPlaylistTracks);
+                  setCurrentIndex(idx);
                 }}
-                title="Tap to play"
+                title="Click to play"
               >
                 <div className="trackIdx">{idx + 1}</div>
 
                 <div className="trackMain">
                   <div className="trackTitle">{t.title}</div>
-                  <div className="trackArtist">{t.artist ?? "Unknown artist"}</div>
+                  <div className="trackArtist">{t.artist}</div>
                 </div>
 
-                <div className="trackDur">{t.durationSec ? fmt(t.durationSec) : "—:—"}</div>
+                <div className="trackDur">—:—</div>
                 <div className="trackMenuIcon">▶</div>
               </button>
-            ))
-          ) : (
-            <div className="muted" style={{ padding: 14 }}>
-              Your library is empty. Send audio to the bot or upload from your device.
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
 
-        <div className="bottom">
-          <button className="primary wide" onClick={addDemoTrackToLibrary}>
-            + Add demo track
-          </button>
-        </div>
-      </>
-    )}
+          <div className="bottom">
+            <button
+              className="primary wide"
+              disabled={!userPlaylistTracks.length}
+              onClick={() => {
+                setQueue(userPlaylistTracks);
+                setCurrentIndex(0);
+              }}
+            >
+              ▶ Play
+            </button>
+          </div>
+        </>
+      )}
 
+      {page.name === "library" && (
+      <>
+        <div className="playlistTop">
+          <div className="muted">
+            System · {userState ? Object.keys(userState.tracks ?? {}).length : 0} songs
+              </div>
+                <div className="playlistActions">
+                  <button className="secondary" onClick={() => tgAlert("Upload/Forward later")}>
+                    How to add music
+                  </button>
+                </div>
+              </div>
+              <div className="tracksBox">
+                {libraryTracks.map((t, idx) => (
+                  <button
+                    className="trackRow trackRow--btn"
+                    key={t.id}
+                    onClick={() => {
+                      setQueue(libraryTracks);
+                      setCurrentIndex(idx);
+                    }}
+                    title="Click to play"
+                  >
+                    <div className="trackIdx">{idx + 1}</div>
 
-      {/* Скрытый audio */}
-      <audio ref={audioRef} />
+                    <div className="trackMain">
+                      <div className="trackTitle">{t.title}</div>
+                      <div className="trackArtist">{t.artist}</div>
+                    </div>
+                    <div className="trackDur">—:—</div>
+                    <div className="trackMenuIcon">▶</div>
+                  </button>
+                ))}
+              </div>
+              <div className="bottom">
+                <button className="primary wide" onClick={addDemoTrackToLibrary}>
+                  + Add demo track
+                </button>
+              </div>
+              <button className="secondary"//----------Add to playlist---------------------------------------------------------
+                disabled={!libraryTracks.length || !Object.keys(userState?.playlists ?? {}).length}
+                onClick={() => {
+                setSelectedTrackIds(new Set());
+                setTargetPlaylistId("");
+                setIsAddToPlaylistOpen(true);
+                }}
+              >
+                Add to playlist
+              </button> 
+            </>
+      )}
 
-      {/* Нижняя панель плеера */}
-      <PlayerBar
-        track={currentTrack}
-        isPlaying={isPlaying}
-        curTime={curTime}
-        duration={duration}
-        onTogglePlay={togglePlay}
-        onPrev={prev}
-        onNext={next}
-        onSeek={seekTo}
-        onOpenFull={() => setIsFullPlayerOpen(true)}
-      />
+{/* Скрытый audio */}
+<audio ref={audioRef} />
 
-{isCreateOpen && (
-  <div
-    onClick={() => {
-      console.log("OVERLAY CLICK");
-      setIsCreateOpen(false);
-    }}
-    style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.6)",
-      zIndex: 999999,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 16,
-    }}
-  >
-    <div
-      onClick={(e) => {
-        console.log("MODAL CLICK");
-        e.stopPropagation();
-      }}
-      style={{
-        width: "min(520px, 100%)",
-        background: "#111",
-        color: "#fff",
-        borderRadius: 16,
-        padding: 16,
-        border: "1px solid rgba(255,255,255,0.12)",
-      }}
-    >
+{/* Нижняя панель плеера */}
+<PlayerBar
+  track={currentTrack}
+  isPlaying={isPlaying}
+  curTime={curTime}
+  duration={duration}
+  onTogglePlay={togglePlay}
+  onPrev={prev}
+  onNext={next}
+  onSeek={seekTo}
+  onOpenFull={() => setIsFullPlayerOpen(true)}
+/>
+
+    {isCreateOpen && (
+      <div
+        onClick={() => {
+          console.log("OVERLAY CLICK");
+          setIsCreateOpen(false);
+        }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.6)",
+          zIndex: 999999,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 16,
+        }}
+      >
+      <div
+        onClick={(e) => {
+            console.log("MODAL CLICK");
+            e.stopPropagation();
+        }}
+        style={{
+          width: "min(520px, 100%)",
+          background: "#111",
+          color: "#fff",
+          borderRadius: 16,
+          padding: 16,
+          border: "1px solid rgba(255,255,255,0.12)",
+        }}
+      >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ fontSize: 18, fontWeight: 700 }}>Новый плейлист</div>
-
+            
         {/* ЯВНАЯ КНОПКА ЗАКРЫТЬ */}
-        <button
-          onClick={() => {
+          <button
+            onClick={() => {
             console.log("CLOSE BTN");
             setIsCreateOpen(false);
-          }}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            background: "rgba(255,255,255,0.12)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.12)",
-            cursor: "pointer",
-          }}
-        >
-          ✕
-        </button>
+            }}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              background: "rgba(255,255,255,0.12)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.12)",
+              cursor: "pointer",
+              }}
+          >
+            ✕
+          </button>
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -740,53 +786,140 @@ function addDemoTrackToLibrary() {
           placeholder="Название плейлиста"
           autoFocus
           style={{
-            width: "100%",
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.15)",
-            background: "rgba(0,0,0,0.35)",
-            color: "#fff",
-            outline: "none",
-            fontSize: 16,
-          }}
+                width: "100%",
+                padding: 12,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(0,0,0,0.35)",
+                color: "#fff",
+                outline: "none",
+                fontSize: 16,
+              }}
         />
       </div>
 
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-        <button
-          onClick={() => setIsCreateOpen(false)}
-          style={{
-            flex: 1,
-            padding: 12,
-            borderRadius: 12,
-            background: "rgba(255,255,255,0.08)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.12)",
-            cursor: "pointer",
-          }}
-        >
-          Отмена
-        </button>
+            <button
+              onClick={() => setIsCreateOpen(false)}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.08)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.12)",
+                cursor: "pointer",
+              }}
+            >
+              Отмена
+            </button>
 
-        <button
-          onClick={createPlaylist}
-          disabled={!newPlaylistTitle.trim()}
-          style={{
-            flex: 1,
-            padding: 12,
-            borderRadius: 12,
-            background: newPlaylistTitle.trim() ? "rgba(120,180,255,0.25)" : "rgba(255,255,255,0.06)",
-            color: "#fff",
-            border: "1px solid rgba(255,255,255,0.12)",
-            cursor: newPlaylistTitle.trim() ? "pointer" : "not-allowed",
-          }}
-        >
-          Создать
-        </button>
+            <button
+              onClick={createPlaylist}
+              disabled={!String(newPlaylistTitle ?? "").trim()}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 12,
+                background: newPlaylistTitle.trim() ? "rgba(120,180,255,0.25)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.12)",
+                cursor: newPlaylistTitle.trim() ? "pointer" : "not-allowed",
+              }}
+            >
+              Создать
+            </button>
+          </div>
+        </div>
       </div>
+    )}
+
+    {isAddToPlaylistOpen && (
+      <div className="overlay" onClick={() => setIsAddToPlaylistOpen(false)}>
+         <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <h2>Add tracks to playlist</h2>
+           <div className="muted" style={{ marginTop: 6 }}>
+             Choose playlist and select tracks from your library
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Playlist</div>
+            <select
+              className="input"
+              value={targetPlaylistId}
+              onChange={(e) => setTargetPlaylistId(e.target.value)}
+            >
+              <option value="">— Select —</option>
+              {Object.values(userState?.playlists ?? {}).map((p) => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Tracks</div>
+
+            <div style={{ maxHeight: 260, overflow: "auto", borderRadius: 12 }}>
+              {libraryTracks.map((t) => (
+                <label
+                  key={t.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedTrackIds.has(t.id)}
+                    onChange={() => toggleSelectedTrack(t.id)}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700 }}>{t.title}</div>
+                    <div className="muted">{t.artist}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <button className="secondary" onClick={() => setIsAddToPlaylistOpen(false)}>
+              Cancel
+            </button>
+
+            <button
+              className="primary"
+              disabled={!targetPlaylistId || selectedTrackIds.size === 0}
+              onClick={() => {
+                const idsToAdd = Array.from(selectedTrackIds);
+
+                setUserState((prev) => {
+                  if (!prev) return prev;
+                  const next = structuredClone(prev);
+
+                  const pl = next.playlists?.[targetPlaylistId];
+                  if (!pl) return prev;
+
+                  const existing = new Set(pl.trackIds || []);
+                  idsToAdd.forEach((id) => existing.add(id));
+
+                  pl.trackIds = Array.from(existing);
+                  return next;
+                });
+
+                setIsAddToPlaylistOpen(false);
+              }}
+            >
+              Add selected
+            </button>
+          </div>
     </div>
   </div>
 )}
+
 
   </div>
   </div>

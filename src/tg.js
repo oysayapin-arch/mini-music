@@ -22,8 +22,14 @@ export function getUser() {
 
 // UI вместо alert (с фолбэком для браузера)
 export function tgAlert(message) {
-  if (tg?.showAlert) tg.showAlert(message);
-  else window.alert(message);
+  try {
+    if (window.Telegram?.WebApp?.showAlert) {
+      window.Telegram.WebApp.showAlert(String(message));
+      return;
+    }
+  } catch (e) {}
+  // fallback если не TWA / метод не поддержан
+  alert(String(message));
 }
 
 export function tgConfirm(message, onOk) {
@@ -32,15 +38,17 @@ export function tgConfirm(message, onOk) {
 }
 
 export function tgPopup(title, message) {
-  if (tg?.showPopup) {
-    tg.showPopup({
-      title,
-      message,
-      buttons: [{ id: "ok", type: "ok", text: "Ок" }],
-    });
-  } else {
-    window.alert(`${title}\n\n${message}`);
-  }
+  try {
+    if (window.Telegram?.WebApp?.showPopup) {
+      window.Telegram.WebApp.showPopup({
+        title: String(title ?? ""),
+        message: String(message ?? ""),
+        buttons: [{ type: "ok" }],
+      });
+      return;
+    }
+  } catch (e) {}
+  alert(`${title ? title + "\n\n" : ""}${String(message)}`);
 }
 
 // Применяем тему Telegram к CSS-переменным
