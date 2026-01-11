@@ -107,3 +107,50 @@
 }
 
 .deleteBtn:hover{ opacity:1; }
+
+.trackRemove {
+  margin-left: 10px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.trackRemove:hover {
+  opacity: 1;
+}
+
+.sheet{
+  width: min(520px, 92vw);
+  border-radius: 18px;
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.2);
+}
+
+.sheetTitle{
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.sheetBtn{
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 12px;
+  margin-top: 8px;
+  background: rgba(0,0,0,.04);
+  cursor: pointer;
+}
+
+.sheetBtn--danger{
+  background: rgba(255,0,0,.10);
+}
+
+.sheetBtn--muted{
+  background: rgba(0,0,0,.02);
+  opacity: .85;
+}

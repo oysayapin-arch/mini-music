@@ -158,6 +158,24 @@ export default function App() {
   const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState(new Set());
   const [targetPlaylistId, setTargetPlaylistId] = useState("");
+  const [trackMenu, setTrackMenu] = useState({
+  open: false,
+  playlistId: null,   // откуда вызвали (user playlist)
+  trackId: null,
+});
+
+const [pickTarget, setPickTarget] = useState({
+  open: false,
+  mode: null,         // "add" | "move"
+  fromPlaylistId: null,
+  trackId: null,
+  targetPlaylistId: "",
+});
+
+const lp = useLongPress(
+  () => openTrackMenu(page.playlistId, t.id),                 // long-press
+  () => { setQueue(userPlaylistTracks); setCurrentIndex(idx); } // short tap
+);
 
 
   //========================================================================================================useEffect================================//
@@ -333,6 +351,90 @@ export default function App() {
     setQueue(tracks);
     setCurrentIndex(index);
   }
+//----------------------------------------------Menu Tracs-----------------------------------------
+  function openTrackMenu(playlistId, trackId) {
+    setTrackMenu({ open: true, playlistId, trackId });
+  }
+
+  function closeTrackMenu() {
+    setTrackMenu({ open: false, playlistId: null, trackId: null });
+  }
+
+  function removeTrackFromUserPlaylist(playlistId, trackId) {
+    setUserState((prev) => {
+      if (!prev?.playlists?.[playlistId]) return prev;
+
+      const next = structuredClone(prev);
+      const p = next.playlists[playlistId];
+      p.trackIds = (p.trackIds || []).filter((id) => id !== trackId);
+      return next; // tracks/library не трогаем
+    });
+  }
+
+  function addTrackToUserPlaylist(targetPlaylistId, trackId) {
+    setUserState((prev) => {
+      if (!prev?.playlists?.[targetPlaylistId]) return prev;
+
+      const next = structuredClone(prev);
+      const p = next.playlists[targetPlaylistId];
+      const setIds = new Set(p.trackIds || []);
+      setIds.add(trackId);
+      p.trackIds = Array.from(setIds);
+      return next;
+    });
+  }
+
+  function moveTrackBetweenUserPlaylists(fromPlaylistId, toPlaylistId, trackId) {
+    setUserState((prev) => {
+      if (!prev?.playlists?.[fromPlaylistId] || !prev?.playlists?.[toPlaylistId]) return prev;
+
+      const next = structuredClone(prev);
+      const from = next.playlists[fromPlaylistId];
+      const to = next.playlists[toPlaylistId];
+
+      from.trackIds = (from.trackIds || []).filter((id) => id !== trackId);
+
+      const setIds = new Set(to.trackIds || []);
+      setIds.add(trackId);
+      to.trackIds = Array.from(setIds);
+
+      return next;
+    });
+  }
+//-------------------------------useLongPress---------------------------------------------------
+  function useLongPress(onLongPress, onClick, delay = 450) {
+    const timerRef = useRef(null);
+    const firedRef = useRef(false);
+
+    function clear() {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+
+    function start(e) {
+      firedRef.current = false;
+      clear();
+      timerRef.current = setTimeout(() => {
+        firedRef.current = true;
+        onLongPress(e);
+      }, delay);
+    }
+
+    function end(e) {
+      clear();
+      // если longPress не сработал — это обычный клик
+      if (!firedRef.current) onClick(e);
+    }
+
+    function cancel() {
+      clear();
+    }
+
+    return { start, end, cancel };
+  }
+//---------------------------------------------------------------------------------------------------
 
   function createPlaylistWithTitle() 
   {
@@ -427,6 +529,20 @@ export default function App() {
   if (window.confirm(`Delete "${title}"?`)) {
     deletePlaylist(playlistId);
   }
+  }
+
+  function removeTrackFromUserPlaylist(playlistId, trackId) {
+  setUserState((prev) => {
+    if (!prev?.playlists?.[playlistId]) return prev;
+
+    const next = structuredClone(prev);
+    const p = next.playlists[playlistId];
+
+    p.trackIds = (p.trackIds || []).filter((id) => id !== trackId);
+
+    // ВАЖНО: next.tracks НЕ трогаем — это Library/база треков
+    return next;
+  });
   }
 
   function addDemoTrackToLibrary() {
@@ -636,14 +752,22 @@ export default function App() {
 
                       <div className="tracksBox">
                         {tracks.map((t, idx) => (
+   //---------------------------------------------------------------------------------
                           <button
                             className="trackRow trackRow--btn"
-                            key={t.id}
-                            onClick={() => startPlaylistFrom(idx)}
-                            title="Нажми, чтобы воспроизвести"
-                          >
+                              key={t.id}
+                              onPointerDown={(e) => { e.preventDefault(); lp.start(e); }}
+                              onPointerUp={(e) => { e.preventDefault(); lp.end(e); }}
+                              onPointerCancel={lp.cancel}
+                              onPointerLeave={lp.cancel}
+                              onContextMenu={(e) => { // ПК: правый клик
+                                e.preventDefault();
+                                openTrackMenu(page.playlistId, t.id);
+                            }}
+                            title="Tap to play • Hold for actions"
+   //---------------------------------------------------------------------------------
+                            >
                             <div className="trackIdx">{idx + 1}</div>
-
                             <div className="trackMain">
                               <div className="trackTitle">{t.title}</div>
                               <div className="trackArtist">{t.artist}</div>
@@ -682,7 +806,7 @@ export default function App() {
                       setCurrentIndex(idx);
                     }}
                     title="Click to play"
-                  >
+                    >
                     <div className="trackIdx">{idx + 1}</div>
 
                     <div className="trackMain">
@@ -692,10 +816,22 @@ export default function App() {
 
                     <div className="trackDur">—:—</div>
                     <div className="trackMenuIcon">▶</div>
+
+                     {/* Крестик удаления */}
+                    <button
+                      className="trackRemove"
+                      aria-label="Remove from playlist"
+                      onClick={(e) => {
+                        e.stopPropagation(); // чтобы не запускало воспроизведение
+                        removeTrackFromUserPlaylist(page.playlistId, t.id);
+                      }}
+                      >
+                      ✕
+                    </button>
                   </button>
                 ))}
               </div>
-
+              
               <div className="bottom">
                 <button
                   className="primary wide"
@@ -969,11 +1105,124 @@ export default function App() {
                   Add selected
                 </button>
               </div>
-        </div>
-      </div>
-    )}
+            </div>
+          </div>
+        )}
+        
+        {trackMenu.open && (
+          <div className="overlay" onClick={closeTrackMenu}>
+            <div className="sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="sheetTitle">Track actions</div>
+              <button
+                className="sheetBtn sheetBtn--danger"
+                onClick={() => {
+                  removeTrackFromUserPlaylist(trackMenu.playlistId, trackMenu.trackId);
+                  closeTrackMenu();
+                }}
+              >
+                Remove from this playlist
+              </button>
+              <button
+                className="sheetBtn"
+                onClick={() => {
+                  setPickTarget({
+                    open: true,
+                    mode: "move",
+                    fromPlaylistId: trackMenu.playlistId,
+                    trackId: trackMenu.trackId,
+                    targetPlaylistId: "",
+                  });
+                  closeTrackMenu();
+                }}
+              >
+                Move to another playlist…
+              </button>
 
+              <button
+                className="sheetBtn"
+                onClick={() => {
+                  setPickTarget({
+                    open: true,
+                    mode: "add",
+                    fromPlaylistId: trackMenu.playlistId,
+                    trackId: trackMenu.trackId,
+                    targetPlaylistId: "",
+                  });
+                  closeTrackMenu();
+                }}
+              >
+                Add to another playlist…
+              </button>
 
+              <button className="sheetBtn sheetBtn--muted" onClick={closeTrackMenu}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pickTarget.open && (
+          <div
+            className="overlay"
+            onClick={() => setPickTarget((p) => ({ ...p, open: false }))}
+          >
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modalTop">
+                <div className="modalTitle">
+                  {pickTarget.mode === "move" ? "Move to playlist" : "Add to playlist"}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                <div className="muted" style={{ marginBottom: 6 }}>Choose playlist</div>
+
+                <select
+                  className="input"
+                  value={pickTarget.targetPlaylistId}
+                  onChange={(e) =>
+                    setPickTarget((p) => ({ ...p, targetPlaylistId: e.target.value }))
+                  }
+                >
+                  <option value="">— Select —</option>
+                  {Object.values(userState?.playlists ?? {})
+                    .filter((p) => p.id !== pickTarget.fromPlaylistId) // не показываем текущий
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <button
+                  className="secondary"
+                  onClick={() => setPickTarget((p) => ({ ...p, open: false }))}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="primary"
+                  disabled={!pickTarget.targetPlaylistId}
+                  onClick={() => {
+                    const to = pickTarget.targetPlaylistId;
+                    const from = pickTarget.fromPlaylistId;
+                    const tid = pickTarget.trackId;
+
+                    if (pickTarget.mode === "move") {
+                      moveTrackBetweenUserPlaylists(from, to, tid);
+                    } else {
+                      addTrackToUserPlaylist(to, tid);
+                    }
+
+                    setPickTarget((p) => ({ ...p, open: false }));
+                  }}
+                >
+                  {pickTarget.mode === "move" ? "Move" : "Add"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
   </div>
 );
@@ -1087,8 +1336,7 @@ function FullPlayer({ track, isPlaying, curTime, duration, onTogglePlay, onPrev,
           <button className="iconBtn" onClick={() => tgAlert("Лайк позже")} aria-label="Лайк">❤️</button>
         </div>
       </div>
-    </div>
-    
+    </div>  
   );
   
 }
