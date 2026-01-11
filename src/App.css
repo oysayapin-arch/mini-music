@@ -74,3 +74,16 @@
 .wide {
   width: 100%;
 }
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.listHeader .primary {
+  padding: 8px 14px;
+  font-size: 14px;
+}
