@@ -53,7 +53,7 @@
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 300px;
+  padding: 12px;
 }
 
 /* --- Library header row --- */
@@ -88,3 +88,22 @@
   padding: 8px 14px;
   font-size: 14px;
 }
+
+.card__titleRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.deleteBtn{
+  border:none;
+  background:transparent;
+  font-size:18px;
+  line-height:1;
+  padding:6px 8px;
+  cursor:pointer;
+  opacity:.5;
+}
+
+.deleteBtn:hover{ opacity:1; }

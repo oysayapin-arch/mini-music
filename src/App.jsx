@@ -387,6 +387,48 @@ export default function App() {
     setNewPlaylistTitle("");
   }
 
+  function deletePlaylist(playlistId) {
+  setUserState((prev) => {
+    if (!prev?.playlists?.[playlistId]) return prev;
+
+    const next = structuredClone(prev);
+    delete next.playlists[playlistId];
+
+    // треки не удаляем — они остаются в Library
+    return next;
+  });
+  }
+
+  function requestDeletePlaylist(playlistId) {
+  const p = userState?.playlists?.[playlistId];
+  const title = p?.title ?? "this playlist";
+
+  // Если ты в Telegram и есть tgPopup — пробуем его
+  try {
+    if (isTg?.() && tgPopup) {
+      tgPopup({
+        title: "Delete playlist?",
+        message: `Delete "${title}"?`,
+        buttons: [
+          { id: "cancel", type: "cancel", text: "Cancel" },
+          { id: "delete", type: "destructive", text: "Delete" },
+        ],
+      }).then((btnId) => {
+        if (btnId === "delete") deletePlaylist(playlistId);
+      });
+
+      return;
+    }
+  } catch {
+    // падаем дальше на confirm
+  }
+
+  // Фолбэк для браузера / если метод недоступен
+  if (window.confirm(`Delete "${title}"?`)) {
+    deletePlaylist(playlistId);
+  }
+  }
+
   function addDemoTrackToLibrary() {
     const id = `trk_${Date.now()}`;
     const demo = {
@@ -528,11 +570,25 @@ export default function App() {
                               key={p.id}
                               className="card"
                               onClick={() => setPage({ name: "userPlaylist", playlistId: p.id })}
-                              >
-                              <div className="card__title">{p.title}</div>
+                            >
+                              <div className="card__titleRow">
+                                <div className="card__title">{p.title}</div>
+                                <button
+                                  type="button"
+                                  className="deleteBtn"
+                                  aria-label="Delete playlist"
+                                  onClick={(e) => {
+                                    e.stopPropagation();        // важно: чтобы не открывался плейлист
+                                    requestDeletePlaylist(p.id);
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
                               <div className="card__meta">
                                 <span className="badge badge--private">My</span>
-                                <span className="muted">{p.trackIds.length} songs</span>
+                                <span className="muted">{(p.trackIds ?? []).length} songs</span>
                               </div>
                             </button>
                             ))}
