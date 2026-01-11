@@ -5,6 +5,7 @@
   text-align: center;
 }
 
+
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -52,7 +53,7 @@
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 120px;
+  padding: 300px;
 }
 
 /* --- Library header row --- */
