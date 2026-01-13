@@ -3,6 +3,126 @@ import { initTelegram, getUser, isTg, tgAlert, tgPopup } from "./tg";
 import { loadUserState, saveUserState } from "./store";
 
 
+
+
+
+
+//Вынеси useLongPress за пределы App
+
+function useLongPress(onLongPress, onClick, delay = 450) {
+  const timerRef = useRef(null);
+  const firedRef = useRef(false);
+
+  const clear = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const start = (e) => {
+    firedRef.current = false;
+    clear();
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      onLongPress(e);
+    }, delay);
+  };
+
+  const end = (e) => {
+    clear();
+    if (!firedRef.current) onClick(e);
+  };
+
+  const cancel = () => clear();
+
+  return { start, end, cancel };
+}
+//Создай компонент UserTrackRow (тоже вне App)
+
+//Добавь универсальный компонент TrackRowPressable (вне App)
+function TrackRowPressable({
+  t,
+  idx,
+  playlistId,
+  title,
+  artist,
+  rightText = "—:—",
+  menuIcon = "⋯",
+  onShortTap,
+  onLongPress,
+}) {
+  const lp = useLongPress(
+    () => onLongPress?.(t, idx),
+    () => onShortTap?.(t, idx)
+  );
+
+  return (
+    <button
+      className="trackRow trackRow--btn"
+      onPointerDown={(e) => { e.preventDefault(); lp.start(e); }}
+      onPointerUp={(e) => { e.preventDefault(); lp.end(e); }}
+      onPointerCancel={lp.cancel}
+      onPointerLeave={lp.cancel}
+      onContextMenu={(e) => { e.preventDefault(); onLongPress?.(t, idx); }} // ПК: правый клик = меню
+      title="Tap to play • Hold for actions"
+    >
+      <div className="trackIdx">{idx + 1}</div>
+
+      <div className="trackMain">
+        <div className="trackTitle">{title ?? t.title}</div>
+        <div className="trackArtist">{artist ?? t.artist}</div>
+      </div>
+
+      <div className="trackDur">{rightText}</div>
+      <div className="trackMenuIcon">{menuIcon}</div>
+    </button>
+  );
+}
+
+
+function UserTrackRow({
+  t,
+  idx,
+  playlistId,
+  userPlaylistTracks,
+  setQueue,
+  setCurrentIndex,
+  openTrackMenu,
+}) {
+  const lp = useLongPress(
+    () => openTrackMenu(playlistId, t.id), // long press
+    () => {
+      setQueue(userPlaylistTracks);
+      setCurrentIndex(idx);
+    } // short tap
+  );
+
+  return (
+    <button
+      className="trackRow trackRow--btn"
+      onPointerDown={(e) => { e.preventDefault(); lp.start(e); }}
+      onPointerUp={(e) => { e.preventDefault(); lp.end(e); }}
+      onPointerCancel={lp.cancel}
+      onPointerLeave={lp.cancel}
+      onContextMenu={(e) => { e.preventDefault(); openTrackMenu(playlistId, t.id); }}
+      title="Tap to play • Hold for actions"
+    >
+      <div className="trackIdx">{idx + 1}</div>
+
+      <div className="trackMain">
+        <div className="trackTitle">{t.title}</div>
+        <div className="trackArtist">{t.artist}</div>
+      </div>
+
+      <div className="trackDur">—:—</div>
+      <div className="trackMenuIcon">⋯</div>
+    </button>
+  );
+}
+//--------------------------------------------------------------------
+
+
 const playlists = [
   { id: "p1", title: "Избранное", isPublic: false },
   { id: "p2", title: "Bass Night (из группы)", isPublic: true },
@@ -158,12 +278,13 @@ export default function App() {
   const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState(new Set());
   const [targetPlaylistId, setTargetPlaylistId] = useState("");
+
+  //1) Добавь состояния для контекстного меню
   const [trackMenu, setTrackMenu] = useState({
   open: false,
   playlistId: null,   // откуда вызвали (user playlist)
   trackId: null,
 });
-
 const [pickTarget, setPickTarget] = useState({
   open: false,
   mode: null,         // "add" | "move"
@@ -171,12 +292,7 @@ const [pickTarget, setPickTarget] = useState({
   trackId: null,
   targetPlaylistId: "",
 });
-
-const lp = useLongPress(
-  () => openTrackMenu(page.playlistId, t.id),                 // long-press
-  () => { setQueue(userPlaylistTracks); setCurrentIndex(idx); } // short tap
-);
-
+//----------------------------------------------------------
 
   //========================================================================================================useEffect================================//
   useEffect(() => {
@@ -352,6 +468,7 @@ const lp = useLongPress(
     setCurrentIndex(index);
   }
 //----------------------------------------------Menu Tracs-----------------------------------------
+//2) Функции: открыть меню + выполнить действия
   function openTrackMenu(playlistId, trackId) {
     setTrackMenu({ open: true, playlistId, trackId });
   }
@@ -401,7 +518,9 @@ const lp = useLongPress(
       return next;
     });
   }
+//---------------------------------------------------------------------------------------------------
 //-------------------------------useLongPress---------------------------------------------------
+//3) Long-press хендлер (удержание 450 мс)
   function useLongPress(onLongPress, onClick, delay = 450) {
     const timerRef = useRef(null);
     const firedRef = useRef(false);
@@ -752,34 +871,18 @@ const lp = useLongPress(
 
                       <div className="tracksBox">
                         {tracks.map((t, idx) => (
-   //---------------------------------------------------------------------------------
-                          <button
-                            className="trackRow trackRow--btn"
-                              key={t.id}
-                              onPointerDown={(e) => { e.preventDefault(); lp.start(e); }}
-                              onPointerUp={(e) => { e.preventDefault(); lp.end(e); }}
-                              onPointerCancel={lp.cancel}
-                              onPointerLeave={lp.cancel}
-                              onContextMenu={(e) => { // ПК: правый клик
-                                e.preventDefault();
-                                openTrackMenu(page.playlistId, t.id);
-                            }}
-                            title="Tap to play • Hold for actions"
-   //---------------------------------------------------------------------------------
-                            >
-                            <div className="trackIdx">{idx + 1}</div>
-                            <div className="trackMain">
-                              <div className="trackTitle">{t.title}</div>
-                              <div className="trackArtist">{t.artist}</div>
-                            </div>
-
-                            <div className="trackDur">
-                              {duration && currentTrack?.id === t.id ? fmt(duration) : "—:—"}
-                            </div>
-                            <div className="trackMenuIcon">▶</div>
-                          </button>
+                          <TrackRowPressable
+                            key={t.id}
+                            t={t}
+                            idx={idx}
+                            rightText={duration && currentTrack?.id === t.id ? fmt(duration) : "—:—"}
+                            menuIcon="▶"
+                            onShortTap={() => startPlaylistFrom(idx)}
+                            onLongPress={() => openTrackMenu(page.playlistId, t.id)}
+                          />
                         ))}
                       </div>
+
 
                       <div className="bottom">
                         <button className="primary wide" onClick={() => startPlaylistFrom(0)}>
@@ -798,39 +901,21 @@ const lp = useLongPress(
 
               <div className="tracksBox">
                 {userPlaylistTracks.map((t, idx) => (
-                  <button
-                    className="trackRow trackRow--btn"
+                  <TrackRowPressable
                     key={t.id}
-                    onClick={() => {
+                    t={t}
+                    idx={idx}
+                    playlistId={page.playlistId}
+                    onShortTap={() => {
                       setQueue(userPlaylistTracks);
                       setCurrentIndex(idx);
                     }}
-                    title="Click to play"
-                    >
-                    <div className="trackIdx">{idx + 1}</div>
-
-                    <div className="trackMain">
-                      <div className="trackTitle">{t.title}</div>
-                      <div className="trackArtist">{t.artist}</div>
-                    </div>
-
-                    <div className="trackDur">—:—</div>
-                    <div className="trackMenuIcon">▶</div>
-
-                     {/* Крестик удаления */}
-                    <button
-                      className="trackRemove"
-                      aria-label="Remove from playlist"
-                      onClick={(e) => {
-                        e.stopPropagation(); // чтобы не запускало воспроизведение
-                        removeTrackFromUserPlaylist(page.playlistId, t.id);
-                      }}
-                      >
-                      ✕
-                    </button>
-                  </button>
+                    onLongPress={() => openTrackMenu(page.playlistId, t.id)}
+                  />
                 ))}
               </div>
+
+
               
               <div className="bottom">
                 <button
@@ -859,28 +944,23 @@ const lp = useLongPress(
                       </button>
                     </div>
                   </div>
+
                   <div className="tracksBox">
                     {libraryTracks.map((t, idx) => (
-                      <button
-                        className="trackRow trackRow--btn"
+                      <TrackRowPressable
                         key={t.id}
-                        onClick={() => {
+                        t={t}
+                        idx={idx}
+                        onShortTap={() => {
                           setQueue(libraryTracks);
                           setCurrentIndex(idx);
                         }}
-                        title="Click to play"
-                      >
-                        <div className="trackIdx">{idx + 1}</div>
-
-                        <div className="trackMain">
-                          <div className="trackTitle">{t.title}</div>
-                          <div className="trackArtist">{t.artist}</div>
-                        </div>
-                        <div className="trackDur">—:—</div>
-                        <div className="trackMenuIcon">▶</div>
-                      </button>
+                        onLongPress={() => tgAlert("Меню для Library сделаем позже")}
+                        menuIcon="▶"
+                      />
                     ))}
                   </div>
+
                   <div className="bottom">
                     <button className="primary wide" onClick={addDemoTrackToLibrary}>
                       + Add demo track
