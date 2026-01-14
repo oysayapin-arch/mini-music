@@ -285,6 +285,10 @@ export default function App() {
   playlistId: null,   // откуда вызвали (user playlist)
   trackId: null,
 });
+const otherUserPlaylists = useMemo(() => {
+  const all = Object.values(userState?.playlists ?? {});
+  return all.filter((p) => p?.id && p.id !== trackMenu.playlistId);
+}, [userState, trackMenu.playlistId]);
 const [pickTarget, setPickTarget] = useState({
   open: false,
   mode: null,         // "add" | "move"
@@ -515,6 +519,9 @@ const [pickTarget, setPickTarget] = useState({
       setIds.add(trackId);
       to.trackIds = Array.from(setIds);
 
+//-
+
+
       return next;
     });
   }
@@ -648,20 +655,6 @@ const [pickTarget, setPickTarget] = useState({
   if (window.confirm(`Delete "${title}"?`)) {
     deletePlaylist(playlistId);
   }
-  }
-
-  function removeTrackFromUserPlaylist(playlistId, trackId) {
-  setUserState((prev) => {
-    if (!prev?.playlists?.[playlistId]) return prev;
-
-    const next = structuredClone(prev);
-    const p = next.playlists[playlistId];
-
-    p.trackIds = (p.trackIds || []).filter((id) => id !== trackId);
-
-    // ВАЖНО: next.tracks НЕ трогаем — это Library/база треков
-    return next;
-  });
   }
 
   function addDemoTrackToLibrary() {
@@ -1193,6 +1186,7 @@ const [pickTarget, setPickTarget] = useState({
           <div className="overlay" onClick={closeTrackMenu}>
             <div className="sheet" onClick={(e) => e.stopPropagation()}>
               <div className="sheetTitle">Track actions</div>
+
               <button
                 className="sheetBtn sheetBtn--danger"
                 onClick={() => {
@@ -1202,37 +1196,42 @@ const [pickTarget, setPickTarget] = useState({
               >
                 Remove from this playlist
               </button>
-              <button
-                className="sheetBtn"
-                onClick={() => {
-                  setPickTarget({
-                    open: true,
-                    mode: "move",
-                    fromPlaylistId: trackMenu.playlistId,
-                    trackId: trackMenu.trackId,
-                    targetPlaylistId: "",
-                  });
-                  closeTrackMenu();
-                }}
-              >
-                Move to another playlist…
-              </button>
 
-              <button
-                className="sheetBtn"
-                onClick={() => {
-                  setPickTarget({
-                    open: true,
-                    mode: "add",
-                    fromPlaylistId: trackMenu.playlistId,
-                    trackId: trackMenu.trackId,
-                    targetPlaylistId: "",
-                  });
-                  closeTrackMenu();
-                }}
-              >
-                Add to another playlist…
-              </button>
+              {otherUserPlaylists.length > 0 && (
+                <>
+                  <button
+                    className="sheetBtn"
+                    onClick={() => {
+                      setPickTarget({
+                        open: true,
+                        mode: "move",
+                        fromPlaylistId: trackMenu.playlistId,
+                        trackId: trackMenu.trackId,
+                        targetPlaylistId: "",
+                      });
+                      closeTrackMenu();
+                    }}
+                  >
+                    Move to another playlist…
+                  </button>
+
+                  <button
+                    className="sheetBtn"
+                    onClick={() => {
+                      setPickTarget({
+                        open: true,
+                        mode: "add",
+                        fromPlaylistId: trackMenu.playlistId,
+                        trackId: trackMenu.trackId,
+                        targetPlaylistId: "",
+                      });
+                      closeTrackMenu();
+                    }}
+                  >
+                    Add to another playlist…
+                  </button>
+                </>
+              )}
 
               <button className="sheetBtn sheetBtn--muted" onClick={closeTrackMenu}>
                 Cancel
@@ -1240,6 +1239,7 @@ const [pickTarget, setPickTarget] = useState({
             </div>
           </div>
         )}
+
 
         {pickTarget.open && (
           <div
@@ -1265,7 +1265,7 @@ const [pickTarget, setPickTarget] = useState({
                 >
                   <option value="">— Select —</option>
                   {Object.values(userState?.playlists ?? {})
-                    .filter((p) => p.id !== pickTarget.fromPlaylistId) // не показываем текущий
+                    .filter((p) => p?.id && p.id !== pickTarget.fromPlaylistId)
                     .map((p) => (
                       <option key={p.id} value={p.id}>{p.title}</option>
                     ))}
@@ -1306,6 +1306,7 @@ const [pickTarget, setPickTarget] = useState({
       </div>
   </div>
 );
+
 }
 
 function Header({ title, onBack }) {
